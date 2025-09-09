@@ -174,6 +174,13 @@ class GitBDiff(GitBase):
             if line != "":
                 yield line
 
+    def diff(self):
+        """Text diff of any changes on the branch."""
+
+        for line in self.run_git(["diff", self.ancestor]):
+            if line != "":
+                yield line
+
 
 class GitInfo(GitBase):
     """

@@ -257,3 +257,20 @@ def test_detached_head(git_repo):
 
     git_base = GitBase()
     assert git_base.get_branch_name() == git_base.detached_head_reference
+
+
+def test_branch_diff_text(git_repo):
+    """Test a simple branch diff."""
+
+    os.chdir(git_repo)
+    subprocess.run(["git", "checkout", "mybranch"], check=True)
+
+    try:
+        bdiff = GitBDiff()
+        changes = list(bdiff.files())
+        text = list(bdiff.diff())
+    finally:
+        subprocess.run(["git", "checkout", "main"], check=True)
+
+    assert text[0] == "diff --git a/file20 b/file20"
+    assert text[6].startswith("+Lorem")
