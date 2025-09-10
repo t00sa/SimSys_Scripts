@@ -274,3 +274,20 @@ def test_branch_diff_text(git_repo):
 
     assert text[0] == "diff --git a/file20 b/file20"
     assert text[6].startswith("+Lorem")
+
+
+def test_branch_diff_no_prefix(git_repo):
+    """Test a simple branch diff without a prefix."""
+
+    os.chdir(git_repo)
+    subprocess.run(["git", "checkout", "mybranch"], check=True)
+
+    try:
+        bdiff = GitBDiff()
+        changes = list(bdiff.files())
+        text = list(bdiff.diff(prefix=False))
+    finally:
+        subprocess.run(["git", "checkout", "main"], check=True)
+
+    assert text[0] == "diff --git file20 file20"
+    assert text[6].startswith("+Lorem")
