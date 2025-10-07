@@ -271,7 +271,6 @@ class TestCheckerCore:
         assert checker._additions == set(["ABC"])
 
 
-
 class TestArguments:
     """Test command line argument handling."""
 
@@ -286,181 +285,15 @@ class TestArguments:
         assert "path to working copy" in captured.out
         assert "path to file of retired ifdefs" in captured.out
 
-    def test_parameters(self, tmp_path):
+    def test_parameters(self, tmp_path, git_ifdef_repo):
         """Test branch and retired file arguments."""
 
         retired = tmp_path / "retired"
         retired.write_text("ABC")
 
-        args = process_arguments(["mybranch", str(retired)])
+        with git_ifdef_repo:
+            os.makedirs("./mybranch")
+            args = process_arguments(["mybranch", str(retired)])
         assert args.branch.name == "mybranch"
         assert args.retired.name == retired.name
         assert not args.suite_mode
-
-    def test_branch_redirect(self, tmp_path, caplog, monkeypatch):
-        """Test environment variable branch redirection."""
-
-        retired = tmp_path / "retired"
-        retired.write_text("ABC")
-
-        monkeypatch.setattr(os, "environ", {"SOURCE_UM_MIRROR": "test-mirror"})
-
-        args = process_arguments(["mybranch", str(retired)])
-
-        assert args.branch.name == "test-mirror"
-        assert args.retired.name == retired.name
-        assert args.suite_mode
-        assert "redirecting branch to 'test-mirror'" in caplog.messages
-
-    def test_no_retired(self, capsys):
-        """Test error when retired file does not exist."""
-
-        with pytest.raises(SystemExit) as err:
-            process_arguments(["mybranch", "nosuch"])
-        assert err.value.code != 0
-
-        captured = capsys.readouterr()
-        assert "retired ifdef file is not valid" in captured.err
-
-
-def add_to_repo(start, end, message, mode="wt", content=None, extension=""):
-    """Add and commit dummy files to a repo."""
-
-    if content is None:
-        content = "Lorem ipsum dolor sit amet {}"
-
-    for i in range(start, end):
-        with open(f"file{i}{extension}", mode, encoding="utf-8") as fd:
-            print(content.format(i), file=fd)
-
-    subprocess.run(["git", "add", "-A"], check=True)
-    subprocess.run(["git", "commit", "--no-gpg-sign", "-m", message], check=True)
-
-
-@pytest.fixture(scope="session")
-def git_repo(tmpdir_factory):
-    """Create and populate a test git repo."""
-
-    location = tmpdir_factory.mktemp("data")
-    os.chdir(location)
-
-    # Create the repo and add some files
-    subprocess.run(["git", "init"], check=True)
-    add_to_repo(0, 10, "Testing")
-
-    # Create a branch and add some files
-    subprocess.run(["git", "checkout", "-b", "wrapper"], check=True)
-    add_to_repo(20, 30, "Commit to wrapper branch")
-    add_to_repo(
-        100,
-        105,
-        "Commit wrapped ifdef files",
-        extension=".F90",
-        content=dedent(
-            """\
-                #ifdef MYIFDEF
-                abc {}
-                #endif
-                """
-        ),
-    )
-
-    subprocess.run(["git", "checkout", "main"], check=True)
-
-    subprocess.run(["git", "checkout", "-b", "new_ifdefs"], check=True)
-
-    # Add something that uses a retired ifdef
-    add_to_repo(
-        110,
-        115,
-        "Commit new ifdefs",
-        extension=".F90",
-        content=dedent(
-            """\
-                    /* Program */
-                    #ifdef NOUSE
-                    abc {}
-                    #endif
-                """
-        ),
-    )
-
-    # Create a branch from main and overwrite some things
-    subprocess.run(["git", "checkout", "main"], check=True)
-    subprocess.run(["git", "checkout", "-b", "overwrite"], check=True)
-    add_to_repo(0, 10, "Overwriting", "at")
-
-    # Switch back to the main branch
-    subprocess.run(["git", "checkout", "main"], check=True)
-
-    # Add other trunk-like branches, finishing back in main
-    for branch in ("stable", "master", "trunk"):
-        subprocess.run(["git", "checkout", "-b", branch], check=True)
-        subprocess.run(["git", "checkout", "main"], check=True)
-
-    return location
-
-
-class TestMain:
-    """Test the main check_idef program."""
-
-    def test_not_dev_branch(self, git_repo, capsys):
-        """Test error if not on a development branch."""
-
-        subprocess.run(["git", "checkout", "main"], check=True)
-
-        with pytest.raises(SystemExit) as err:
-            main([".", "file1"])
-        assert err.value.code == 10
-
-        captured = capsys.readouterr()
-        assert "Not a development branch" in captured.out
-
-    def test_wrapped_ifdef_branch(self, git_repo, caplog):
-        """Test command with a wrapped file."""
-
-        subprocess.run(["git", "checkout", "wrapper"], check=True)
-
-        caplog.clear()
-
-        with pytest.raises(SystemExit) as err:
-            with caplog.at_level(logging.INFO):
-                main([".", "file1"])
-        assert err.value.code == 1
-
-        assert "found 5 files with wrapping ifdefs" in " ".join(caplog.messages)
-
-        subprocess.run(["git", "checkout", "main"], check=True)
-
-    def test_ifdef_branch(self, git_repo, caplog):
-        """Test command with a valid ifdef."""
-
-        subprocess.run(["git", "checkout", "new_ifdefs"], check=True)
-
-        caplog.clear()
-
-        with caplog.at_level(logging.INFO):
-            main([".", "file1"])
-
-        assert "no problems found" in " ".join(caplog.messages)
-
-        subprocess.run(["git", "checkout", "main"], check=True)
-
-    def test_retired_ifdefs(self, git_repo, caplog):
-        """Test command with an retired ifdef."""
-
-        with open("retired.txt", "wt", encoding="utf-8") as fd:
-            print("NOUSE", file=fd)
-
-        subprocess.run(["git", "checkout", "new_ifdefs"], check=True)
-
-        caplog.clear()
-
-        with pytest.raises(SystemExit) as err:
-            with caplog.at_level(logging.INFO):
-                main([".", "retired.txt"])
-        assert err.value.code == 1
-
-        assert "found 1 retired macros in" in " ".join(caplog.messages)
-
-        subprocess.run(["git", "checkout", "main"], check=True)

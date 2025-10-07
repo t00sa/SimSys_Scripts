@@ -16,7 +16,7 @@ from argparse import ArgumentParser
 from pathlib import Path
 from typing import List
 
-from git_bdiff import GitInfo, GitBDiff
+from git_bdiff import GitInfo, GitBDiff, GitBDiffError
 
 
 class IfDefChecker:
@@ -28,12 +28,17 @@ class IfDefChecker:
         self.branch = Path(branch)
         self._retired = []
 
-        # File changes
+        # File containing wrapping ifdefs and files containing newly
+        # added retired macros
         self._wrapped = []
         self._additions = set([])
 
     def load_retired(self, source: Path) -> None:
         """Load retired ifdefs into memory.
+
+        Parse a file containing retired ifdef macros, one per line,
+        into a list.  This can then be used to determine whether any
+        retired ifdefs have been added back in to the codebase.
 
         :param source: path to the retired file.
         """
@@ -57,13 +62,12 @@ class IfDefChecker:
         entire file.  Ignore any other #ifs in diff text.
 
         :param diff: text of the branch diff
-        :return: number of wrapped files
+        :returns: number of wrapped files
         """
 
         self._wrapped = []
 
         limit = len(diff) - 2
-
         i = 0
 
         while i < limit:
@@ -74,7 +78,7 @@ class IfDefChecker:
                 hunks = diff[i].split()
 
                 if hunks[2].startswith("+1,") and diff[i + 1].startswith("+#if"):
-                    # First change is to the first line and adds a
+                    # Change is to the first line and adds a
                     # preprocessor if directive
                     name = line.split()[1]
                     self._wrapped.append(name)
@@ -268,12 +272,25 @@ def process_arguments(argv):
         usage="%(prog)s [options] branch retired", description=__doc__
     )
 
+    parser.add_argument(
+        "-v", dest="verbose", action="count", help="increase verbose output"
+    )
+
     parser.add_argument("branch", type=Path, help="path to working copy/branch")
 
     parser.add_argument("retired", type=Path, help="path to file of retired ifdefs")
 
     args = parser.parse_args(argv)
     args.suite_mode = False
+
+    if args.verbose == 0:
+        level = logging.WARNING
+    elif args.verbose == 1:
+        level = logging.INFO
+    else:
+        level = logging.DEBUG
+
+    logging.basicConfig(level=level)
 
     if not args.retired.is_file():
         parser.error("retired ifdef file is not valid")
@@ -283,20 +300,22 @@ def process_arguments(argv):
         args.suite_mode = True
         logging.warning("redirecting branch to %r", str(args.branch))
 
+    try:
+        info = GitInfo(args.branch)
+    except GitBDiffError as err:
+        parser.error(str(err))
+
+    if info.is_main():
+        # Stop if this is not a development branch
+        parser.error("not a development branch")
+
     return args
 
 
 def main(argv=None):
     """Main function."""
 
-    logging.basicConfig(level=logging.DEBUG)
-
     args = process_arguments(argv or sys.argv[1:])
-
-    if GitInfo(args.branch).is_main():
-        # Stop if this is not a development branch
-        print("Not a development branch")
-        raise SystemExit(10)
 
     # Create the checker
     checker = IfDefChecker(args.branch)
