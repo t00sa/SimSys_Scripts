@@ -175,7 +175,7 @@ def main(inputs, ignore_list, template_path):
             + f"{plural2} missing copyright notice{plural}"
         )
     elif not files_to_check:
-        message = "[WARNGING] "
+        message = "[WARNING] "
         if ignored_count == 1:
             message += "only possible file ignored"
         elif ignored_count > 1:
