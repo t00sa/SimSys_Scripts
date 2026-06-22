@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 ##############################################################################
 # (c) Crown copyright 2024 Met Office. All rights reserved.
 # The file LICENCE, distributed with this code, contains details of the terms
@@ -1036,14 +1036,10 @@ class ApplyMacros:
                 if exception is not None:
                     executor.shutdown(wait=False, cancel_futures=True)
                     raise exception
-                print(
-                    "[INFO] Processed macro successfully written to "
-                    f"{
-                        self.parse_application_section(
-                            meta_order[write_tasks.index(task)]
-                        )
-                    }"
+                print_val = self.parse_application_section(
+                    meta_order[write_tasks.index(task)]
                 )
+                print(f"[INFO] Processed macro successfully written to {print_val}")
 
     ############################################################################
     # Upgrade Apps Functions
